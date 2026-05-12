@@ -2,7 +2,6 @@ import os
 import json
 import yfinance as yf
 import google.generativeai as genai
-from pydantic import BaseModel  # Fixed import for structured outputs
 
 # 1. Setup Institutional Grade Gemini Configuration
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
@@ -10,12 +9,6 @@ if not GEMINI_API_KEY:
     raise ValueError("CRITICAL ERROR: GEMINI_API_KEY environment variable is missing.")
 
 genai.configure(api_key=GEMINI_API_KEY)
-
-# Define strict JSON schema using native Pydantic
-class MarketInsightsSchema(BaseModel):
-    volatility_insight: str
-    options_chain_insight: str
-    actionable_outlook: str
 
 def fetch_ticker_data(symbol: str, period: str = "7d"):
     """Safely fetches ticker data and handles market close/empty df exceptions."""
@@ -47,7 +40,7 @@ def get_market_analysis():
     else:
         btc_close, btc_change = 0.0, 0.0
 
-    # Dynamic Styling Classes (Extracted out to prevent HTML f-string template crashes)
+    # Dynamic Styling Classes
     nifty_color = 'text-emerald-400' if nifty_change >= 0 else 'text-rose-500'
     nifty_bg = 'bg-emerald-950/20 border-emerald-500/30' if nifty_change >= 0 else 'bg-rose-950/20 border-rose-500/30'
     nifty_text_badge = 'text-emerald-400 bg-emerald-950/80' if nifty_change >= 0 else 'text-rose-400 bg-rose-950/80'
@@ -62,45 +55,25 @@ def get_market_analysis():
     - Nifty 50 Spot: {nifty_close} (Day High: {nifty_high}, Day Low: {nifty_low}, Change: {nifty_change}%)
     - Global Risk Sentiment Indicator (Bitcoin): ${btc_close} ({btc_change}%)
 
-    Deliver expert analysis filling all schema requirements perfectly.
+    Provide your actionable analysis in raw HTML format using exactly three grid cards. 
+    Do not use any markdown formatting like ```html. Output only the raw <div> cards matching this structure:
+    
+    <div class="bg-slate-900/60 p-5 rounded-xl border border-slate-800 shadow-md">
+        <h3 class="text-sm font-semibold text-slate-400 uppercase tracking-wider">Card Title Here</h3>
+        <p class="text-slate-200 mt-2 text-sm leading-relaxed">Your professional institutional-grade trading insight here...</p>
+    </div>
+    
+    Generate exactly 3 cards with these specific titles:
+    1. "PRICING STABILITY & VOLATILITY EXPECTATION"
+    2. "OPTIONS CHAIN STRATEGY & KEY LEVELS"
+    3. "DERIVATIVES ACTIONABLE OUTLOOK"
     """
     
     try:
-        # Initializing production-tier engine with system contexts
-        model = genai.GenerativeModel(
-            model_name="gemini-2.5-flash",
-            system_instruction=(
-                "You are an elite institutional Derivatives & F&O Strategist specializing in the Indian National Stock Exchange (NSE). "
-                "Provide deep quantitative insights contextually optimized for intraday, momentum, and options structure analysis."
-            )
-        )
-        
-        response = model.generate_content(
-            prompt,
-            generation_config=genai.GenerationConfig(
-                response_mime_type="application/json",
-                response_schema=MarketInsightsSchema,
-                temperature=0.2
-            )
-        )
-        
-        insights_data = json.loads(response.text)
-        
-        # Build HTML components natively to protect the web layouts structure
-        ai_insights_html = f"""
-        <div class="bg-slate-900/60 p-5 rounded-xl border border-slate-800 shadow-md">
-            <h3 class="text-sm font-semibold text-slate-400 uppercase tracking-wider">PRICING STABILITY & VOLATILITY EXPECTATION</h3>
-            <p class="text-slate-200 mt-2 text-sm leading-relaxed">{insights_data.get('volatility_insight', '')}</p>
-        </div>
-        <div class="bg-slate-900/60 p-5 rounded-xl border border-slate-800 shadow-md">
-            <h3 class="text-sm font-semibold text-slate-400 uppercase tracking-wider">OPTIONS CHAIN STRATEGY & KEY LEVELS</h3>
-            <p class="text-slate-200 mt-2 text-sm leading-relaxed">{insights_data.get('options_chain_insight', '')}</p>
-        </div>
-        <div class="bg-slate-900/60 p-5 rounded-xl border border-slate-800 shadow-md">
-            <h3 class="text-sm font-semibold text-slate-400 uppercase tracking-wider">DERIVATIVES ACTIONABLE OUTLOOK</h3>
-            <p class="text-slate-200 mt-2 text-sm leading-relaxed">{insights_data.get('actionable_outlook', '')}</p>
-        </div>
-        """
+        # Utilizing production-tier stable flash engine
+        model = genai.GenerativeModel("gemini-2.5-flash")
+        response = model.generate_content(prompt)
+        ai_insights_html = response.text
     except Exception as e:
         ai_insights_html = f"""
         <div class="bg-rose-950/40 p-5 rounded-xl border border-rose-500/30 col-span-full">
@@ -116,8 +89,8 @@ def get_market_analysis():
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>⚡ AlphaQuant // F&O Market Terminal</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;800&display=swap" rel="stylesheet">
+    <script src="[https://cdn.tailwindcss.com](https://cdn.tailwindcss.com)"></script>
+    <link href="[https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;800&display=swap](https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;800&display=swap)" rel="stylesheet">
     <style>
         body {{ font-family: 'JetBrains Mono', monospace; }}
     </style>
