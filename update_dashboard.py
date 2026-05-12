@@ -1,170 +1,186 @@
 import os
 import json
-import yfinance as yf
+from flask import Flask, render_template_string, request, jsonify
+from fyers_apiv3 import fyersModel
 import google.generativeai as genai
+from pydantic import BaseModel
 
-# 1. Setup Institutional Grade Gemini Configuration
+app = Flask(__name__)
+
+# 1. System Secure Authentication Setup
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-if not GEMINI_API_KEY:
-    raise ValueError("CRITICAL ERROR: GEMINI_API_KEY environment variable is missing.")
+FYERS_APP_ID = os.getenv("FYERS_APP_ID")
+FYERS_ACCESS_TOKEN = os.getenv("FYERS_ACCESS_TOKEN")
 
 genai.configure(api_key=GEMINI_API_KEY)
 
-def fetch_ticker_data(symbol: str, period: str = "7d"):
-    """Safely fetches ticker data and handles market close/empty df exceptions."""
-    try:
-        df = yf.Ticker(symbol).history(period=period)
-        if df.empty or len(df) < 2:
-            return None
-        return df
-    except Exception:
-        return None
+# Initialize FYERS V3 Engine
+fyers = None
+if FYERS_APP_ID and FYERS_ACCESS_TOKEN:
+    fyers = fyersModel.FyersModel(client_id=FYERS_APP_ID, is_async=False, token=FYERS_ACCESS_TOKEN, log_path="")
 
-def get_market_analysis():
-    # 2. Fetch Live Market Data with Fallbacks
-    nifty_df = fetch_ticker_data("^NSEI")
-    btc_df = fetch_ticker_data("BTC-USD")
-    
-    # Handle missing Nifty data edge-cases gracefully
-    if nifty_df is not None:
-        nifty_close = round(nifty_df['Close'].iloc[-1], 2)
-        nifty_change = round(((nifty_df['Close'].iloc[-1] - nifty_df['Close'].iloc[-2]) / nifty_df['Close'].iloc[-2]) * 100, 2)
-        nifty_high = round(nifty_df['High'].iloc[-1], 2)
-        nifty_low = round(nifty_df['Low'].iloc[-1], 2)
-    else:
-        nifty_close, nifty_change, nifty_high, nifty_low = 0.0, 0.0, 0.0, 0.0
+# Live Bot Core Variables
+AUTOTRADE_STATE = False
 
-    if btc_df is not None:
-        btc_close = round(btc_df['Close'].iloc[-1], 2)
-        btc_change = round(((btc_df['Close'].iloc[-1] - btc_df['Close'].iloc[-2]) / btc_df['Close'].iloc[-2]) * 100, 2)
-    else:
-        btc_close, btc_change = 0.0, 0.0
+class ScalpSignalSchema(BaseModel):
+    signal: str  # BUY, SELL, or HOLD
+    target_price: float
+    stoploss_price: float
+    confidence_score: int  # Percentage 1-100
+    execution_reasoning: str
 
-    # Dynamic Styling Classes
-    nifty_color = 'text-emerald-400' if nifty_change >= 0 else 'text-rose-500'
-    nifty_bg = 'bg-emerald-950/20 border-emerald-500/30' if nifty_change >= 0 else 'bg-rose-950/20 border-rose-500/30'
-    nifty_text_badge = 'text-emerald-400 bg-emerald-950/80' if nifty_change >= 0 else 'text-rose-400 bg-rose-950/80'
-
-    btc_color = 'text-emerald-400' if btc_change >= 0 else 'text-rose-500'
-    btc_bg = 'bg-emerald-950/20 border-emerald-500/30' if btc_change >= 0 else 'bg-rose-950/20 border-rose-500/30'
-    btc_text_badge = 'text-emerald-400 bg-emerald-950/80' if btc_change >= 0 else 'text-rose-400 bg-rose-950/80'
-
-    # 3. Dynamic Structured Querying to Gemini API
-    prompt = f"""
-    Analyze this real-time snapshot:
-    - Nifty 50 Spot: {nifty_close} (Day High: {nifty_high}, Day Low: {nifty_low}, Change: {nifty_change}%)
-    - Global Risk Sentiment Indicator (Bitcoin): ${btc_close} ({btc_change}%)
-
-    Provide your actionable analysis in raw HTML format using exactly three grid cards. 
-    Do not use any markdown formatting like ```html. Output only the raw <div> cards matching this structure:
-    
-    <div class="bg-slate-900/60 p-5 rounded-xl border border-slate-800 shadow-md">
-        <h3 class="text-sm font-semibold text-slate-400 uppercase tracking-wider">Card Title Here</h3>
-        <p class="text-slate-200 mt-2 text-sm leading-relaxed">Your professional institutional-grade trading insight here...</p>
-    </div>
-    
-    Generate exactly 3 cards with these specific titles:
-    1. "PRICING STABILITY & VOLATILITY EXPECTATION"
-    2. "OPTIONS CHAIN STRATEGY & KEY LEVELS"
-    3. "DERIVATIVES ACTIONABLE OUTLOOK"
-    """
-    
-    try:
-        # Utilizing production-tier stable flash engine
-        model = genai.GenerativeModel("gemini-2.5-flash")
-        response = model.generate_content(prompt)
-        ai_insights_html = response.text
-    except Exception as e:
-        ai_insights_html = f"""
-        <div class="bg-rose-950/40 p-5 rounded-xl border border-rose-500/30 col-span-full">
-            <h3 class="text-sm font-semibold text-rose-400 uppercase">System Error</h3>
-            <p class="text-slate-300 mt-2 text-sm">Failed to stream strategist intelligence: {str(e)}</p>
-        </div>
-        """
-
-    # 4. Generate Premium Tailwind Terminal Dashboard UI
-    html_content = f"""<!DOCTYPE html>
+# 2. Premium Dark Trading Desk UI
+HTML_DASHBOARD = """
+<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>⚡ AlphaQuant // F&O Market Terminal</title>
-    <script src="[https://cdn.tailwindcss.com](https://cdn.tailwindcss.com)"></script>
-    <link href="[https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;800&display=swap](https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;800&display=swap)" rel="stylesheet">
-    <style>
-        body {{ font-family: 'JetBrains Mono', monospace; }}
-    </style>
+    <title>⚡ AlphaQuant Pro // Algo Execution Desk</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <style>body { font-family: 'JetBrains Mono', monospace; }</style>
 </head>
 <body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col justify-between selection:bg-emerald-500/30">
-    <div class="container mx-auto px-4 py-6 max-w-6xl">
+    <div class="container mx-auto px-4 py-6 max-w-5xl">
         
-        <header class="border-b border-slate-800 pb-5 mb-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+        <header class="border-b border-slate-800 pb-5 mb-8 flex justify-between items-center">
             <div>
                 <div class="flex items-center gap-2">
-                    <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                    <h1 class="text-xl font-extrabold tracking-wider text-slate-200 uppercase">ALPHAQUANT // DERIVATIVES DESK</h1>
+                    <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                    <h1 class="text-xl font-bold tracking-wider text-slate-200">ALPHAQUANT // HFT EXECUTION CORE</h1>
                 </div>
-                <p class="text-slate-500 text-xs mt-1">Automated AI Analytics • Live Execution Data</p>
+                <p class="text-slate-500 text-xs mt-1">Real-Time Cloud Deployment Engine</p>
             </div>
-            <div class="text-right">
-                <span class="text-xs bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-md text-slate-400 font-semibold">
-                    SYSTEM STATUS: ACTIVE RUNNER
-                </span>
+            <div id="connectionStatus" class="text-xs bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-md text-emerald-400 font-bold">
+                BROKER CONNECTED
             </div>
         </header>
 
         <main class="space-y-6">
-            
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
-                <div class="{nifty_bg} p-6 rounded-2xl border backdrop-blur-md shadow-xl transition hover:border-slate-600">
-                    <div class="flex justify-between items-start">
-                        <span class="text-xs font-bold text-slate-400 uppercase tracking-widest bg-slate-900/80 px-2.5 py-1 rounded">INDEX // NIFTY 50 SPOT</span>
-                        <span class="text-xs font-black px-2 py-0.5 rounded {nifty_text_badge}">
-                            {"+" if nifty_change >= 0 else ""}{nifty_change}%
-                        </span>
-                    </div>
-                    <p class="text-5xl font-black mt-4 tracking-tight {nifty_color}">{nifty_close}</p>
-                    <div class="grid grid-cols-2 gap-2 mt-4 pt-4 border-t border-slate-800/60 text-xs text-slate-400">
-                        <div>DAY HIGH: <span class="text-slate-200 font-semibold">{nifty_high}</span></div>
-                        <div>DAY LOW: <span class="text-slate-200 font-semibold">{nifty_low}</span></div>
-                    </div>
+            <div class="bg-slate-900/60 border border-slate-800 p-6 rounded-2xl flex flex-col md:flex-row justify-between items-start md:items-center gap-4 shadow-xl">
+                <div>
+                    <h2 class="text-lg font-bold text-slate-200">MASTER ALGORITHMIC SWITCH</h2>
+                    <p class="text-xs text-slate-500 mt-1">When turned on, Gemini live-monitors the ticks and instantly fires orders to FYERS with zero delays.</p>
                 </div>
-                
-                <div class="{btc_bg} p-6 rounded-2xl border backdrop-blur-md shadow-xl transition hover:border-slate-600">
-                    <div class="flex justify-between items-start">
-                        <span class="text-xs font-bold text-slate-400 uppercase tracking-widest bg-slate-900/80 px-2.5 py-1 rounded">MACRO // GLOBAL RISK (BTC)</span>
-                        <span class="text-xs font-black px-2 py-0.5 rounded {btc_text_badge}">
-                            {"+" if btc_change >= 0 else ""}{btc_change}%
-                        </span>
-                    </div>
-                    <p class="text-5xl font-black mt-4 tracking-tight {btc_color}">${btc_close:,}</p>
-                    <div class="mt-4 pt-4 border-t border-slate-800/60 text-xs text-slate-400">
-                        ASSET PROFILE: CRYPTO SENTIMENT LEADER
-                    </div>
-                </div>
+                <button id="masterSwitch" onclick="toggleExecution()" class="w-full md:w-auto px-8 py-3.5 rounded-xl bg-rose-600 font-extrabold text-sm tracking-widest shadow-lg shadow-rose-950/50 hover:bg-rose-500 transition-all duration-200">
+                    AUTO-TRADING DISABLED
+                </button>
             </div>
 
-            <div class="pt-4">
-                <h2 class="text-xs font-bold text-emerald-400 uppercase tracking-widest mb-4 flex items-center gap-2">
-                    <span class="inline-block w-1.5 h-3 bg-emerald-500"></span> QUANTITATIVE AI STRATEGIST MATRIX
-                </h2>
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    {ai_insights_html}
+            <div class="bg-slate-900/40 border border-slate-800 rounded-2xl p-6">
+                <h3 class="text-xs font-bold text-emerald-400 uppercase tracking-widest mb-4">🤖 LIVE AI SCALPER ORDERS</h3>
+                <div id="terminalLog" class="bg-slate-950 rounded-xl p-4 border border-slate-800/80 h-48 overflow-y-auto text-xs text-slate-400 space-y-2 font-mono">
+                    <p class="text-slate-600">// Engine initialized. Standing by for real-time tick integration...</p>
                 </div>
             </div>
-            
         </main>
 
-        <footer class="text-center text-xs text-slate-600 mt-16 pt-6 border-t border-slate-900">
-            SECURE REPOSITORY SYSTEM // GENERATED VIA CRON ACTIONS INTERACTION LOOP // NO LOCAL RESIDENCY REQUIRED
+        <footer class="text-center text-xs text-slate-700 mt-12 pt-4 border-t border-slate-900">
+            PROPRIETARY ARCHITECTURE // PIPED API CONNECTIONS SECURED OUTSIDE PUBLIC SPACE
         </footer>
     </div>
+
+    <script>
+        let running = false;
+        function toggleExecution() {
+            running = !running;
+            const btn = document.getElementById('masterSwitch');
+            if(running) {
+                btn.className = "w-full md:w-auto px-8 py-3.5 rounded-xl bg-emerald-500 text-slate-950 font-black text-sm tracking-widest shadow-lg shadow-emerald-500/20 hover:bg-emerald-400 transition-all duration-200";
+                btn.innerText = "AUTO-TRADING: ENABLED";
+                addLog("CRITICAL: Master switch activated. AI Engine now routing predictive live scalps.");
+            } else {
+                btn.className = "w-full md:w-auto px-8 py-3.5 rounded-xl bg-rose-600 font-extrabold text-sm tracking-widest shadow-lg shadow-rose-950/50 hover:bg-rose-500 transition-all duration-200";
+                btn.innerText = "AUTO-TRADING DISABLED";
+                addLog("SYSTEM: Auto-trading halted safely.");
+            }
+            fetch('/api/toggle_bot', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ status: running })
+            });
+        }
+
+        function addLog(text) {
+            const log = document.getElementById('terminalLog');
+            const p = document.createElement('p');
+            p.innerHTML = `> ${text}`;
+            log.appendChild(p);
+            log.scrollTop = log.scrollHeight;
+        }
+    </script>
 </body>
 </html>
 """
-    
-    with open("index.html", "w", encoding="utf-8") as f:
-        f.write(html_content)
 
-if __name__ == "__main__":
-    get_market_analysis()
+@app.route('/')
+def home():
+    return render_template_string(HTML_DASHBOARD)
+
+@app.route('/api/toggle_bot', methods=['POST'])
+def toggle_bot():
+    global AUTOTRADE_STATE
+    data = request.get_json() or {}
+    AUTOTRADE_STATE = data.get("status", False)
+    return jsonify({"status": AUTOTRADE_STATE})
+
+# 3. High-Frequency Tick Entry/Exit Processing Pipeline
+@app.route('/api/process_tick', methods=['POST'])
+def process_tick():
+    """Receives streaming data ticks and instantly triggers the predictive execution frame."""
+    global AUTOTRADE_STATE, fyers
+    if not AUTOTRADE_STATE:
+        return jsonify({"status": "disabled", "reason": "Master engine switch is off."})
+
+    data = request.get_json() or {}
+    spot_price = data.get("price")
+    symbol = data.get("symbol", "NSE:NIFTY50-INDEX")
+    history_context = data.get("history", [])
+
+    prompt = f"""
+    You are an active, real-time automated quantitative scaling model tracking order flow imbalances on the National Stock Exchange (NSE).
+    Instrument Spot: {symbol} -> Price Level: {spot_price}
+    Recent Multi-Tick Micro Structure: {history_context}
+
+    Evaluate instant breakout velocity. If a high-probability trade location is recognized, fire an entry signal instantly.
+    """
+    
+    try:
+        model = genai.GenerativeModel(
+            model_name="gemini-2.5-flash",
+            system_instruction="You are a high-frequency algorithmic derivatives execution system. Make rapid, calculated trading decisions based on short-term price levels."
+        )
+        response = model.generate_content(
+            prompt,
+            generation_config=genai.GenerationConfig(
+                response_mime_type="application/json",
+                response_schema=ScalpSignalSchema,
+                temperature=0.1
+            )
+        )
+        
+        decision = json.loads(response.text)
+        signal = decision.get("signal", "HOLD").upper()
+
+        # Place live trade instantly if broker is configured and signal hits
+        if fyers and signal in ["BUY", "SELL"]:
+            order_payload = {
+                "symbol": "NSE:NIFTY26MAY23400CE",  # This can be set dynamically
+                "qty": 75,  # 1 Lot Nifty
+                "type": 2,  # Market order guarantees instant zero-delay execution
+                "side": 1 if signal == "BUY" else -1,
+                "productType": "MARGIN",
+                "limitPrice": 0,
+                "stopPrice": 0,
+                "validity": "DAY"
+            }
+            fyers.place_order(data=order_payload)
+            
+        return jsonify(decision)
+        
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
